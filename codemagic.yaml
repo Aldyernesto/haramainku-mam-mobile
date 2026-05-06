@@ -1,0 +1,63 @@
+# Codemagic CI/CD — HaramainKU MAM Mobile
+# iOS + Android build otomatis tiap push
+
+workflows:
+  haramainku-mam-ios:
+    name: iOS Build
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    cache:
+      cache_paths:
+        - $HOME/.pub-cache
+        - $CM_BUILD_DIR/build
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Build iOS IPA (unsigned)
+        script: |
+          cd ios
+          pod install 2>/dev/null || true
+          cd ..
+          flutter build ios --release --no-codesign
+    artifacts:
+      - build/ios/iphoneos/Runner.app
+      - build/ios/ipa/*.ipa
+    publishing:
+      email:
+        recipients:
+          - admin@haramaintour.com
+
+  haramainku-mam-android:
+    name: Android Build
+    instance_type: mac_mini_m2
+    max_build_duration: 20
+    environment:
+      flutter: stable
+    cache:
+      cache_paths:
+        - $HOME/.pub-cache
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Build Android APK
+        script: flutter build apk --release
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+    publishing:
+      email:
+        recipients:
+          - admin@haramaintour.com
+
+# Trigger: push ke main / manual
+triggering:
+  events:
+    - push
+    - pull_request
+  branch_patterns:
+    - pattern: main
+      include: true
+      source: true

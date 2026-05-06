@@ -1,0 +1,53 @@
+name: haramainku_mam
+description: HaramainKU Media Asset Manager — Mobile App for Field Crew & Editors
+publish_to: 'none'
+version: 1.0.1+2
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # GraphQL
+  graphql_flutter: ^5.1.2
+
+  # Auth & Storage
+  flutter_secure_storage: ^9.2.2
+
+  # QR Scanner
+  mobile_scanner: ^5.2.3
+
+  # File handling
+  file_picker: ^8.1.4
+  path_provider: ^2.1.4
+  url_launcher: ^6.3.1
+  image_picker: ^1.1.2
+  http: ^1.2.2
+  # workmanager: ^0.5.2  # Background upload — enable after Kotlin compat fix
+
+  # Push notifications
+  firebase_core: ^3.6.0
+  firebase_messaging: ^15.1.3
+
+  # Google Sign-In
+  google_sign_in: ^6.2.2
+
+  # UI
+  provider: ^6.1.2
+  google_fonts: ^6.2.1
+  shimmer: ^3.0.0
+  cached_network_image: ^3.4.1
+
+  # Utilities
+  intl: ^0.19.0
+  gal: ^2.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
