@@ -17,14 +17,11 @@ workflows:
     scripts:
       - name: Get Flutter packages
         script: flutter pub get
-      - name: Build iOS IPA (unsigned)
+      - name: Build iOS unsigned IPA
         script: |
-          cd ios
-          pod install 2>/dev/null || true
-          cd ..
-          flutter build ios --release --no-codesign
+          cd ios && pod install 2>/dev/null || true && cd ..
+          flutter build ipa --no-codesign
     artifacts:
-      - build/ios/iphoneos/Runner.app
       - build/ios/ipa/*.ipa
     publishing:
       email:
