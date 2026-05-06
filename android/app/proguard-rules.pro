@@ -21,6 +21,8 @@
 
 # General Android
 -dontwarn javax.annotation.**
+-dontwarn com.google.android.play.core.**
+-keep class com.google.android.play.core.** { *; }
 -dontwarn kotlin.Unit
 -dontwarn retrofit2.KotlinExtensions
 -dontwarn retrofit2.KotlinExtensions$*
