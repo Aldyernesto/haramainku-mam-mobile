@@ -44,4 +44,10 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# AppleJr / IPA Payload
+Payload/
+*.ipa
+
 # Production keystore — commit dev only
+*.ipa
+*.aab

@@ -353,7 +353,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         setState(() { _selFiles.clear(); _selFolders.clear(); _selMode = false; });
         refetch?.call();
       }),
-      if (context.read<AuthProvider>().user?.role == 'ADMIN')
+      if (context.read<AuthProvider>().user?.isAdmin == true)
         _BulkBtn(icon: Icons.delete_outline, label: 'Trash', onTap: () async {
           final n = _selFiles.length + _selFolders.length;
           final confirmed = await showDialog<bool>(
@@ -440,7 +440,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 TextButton(onPressed: () { Clipboard.setData(ClipboardData(text: l)); Navigator.pop(ctx); }, child: const Text('Copy')),
               ]));
             }),
-            if (context.read<AuthProvider>().user?.role == 'ADMIN')
+            if (context.read<AuthProvider>().user?.isAdmin == true)
               _Act(icon: Icons.delete_outline, label: 'Trash', onTap: () => showDialog(context: ctx, builder: (c) => AlertDialog(backgroundColor: AppTheme.surfaceContainerHigh, title: const Text('Move to Trash?', style: TextStyle(color: AppTheme.onSurface)), actions: [
                 TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
                 TextButton(onPressed: () async { Navigator.pop(c); Navigator.pop(ctx); await client.mutate(MutationOptions(document: gql(_moveToTrash), variables: {'fileId': f['id']})); }, child: const Text('Trash', style: TextStyle(color: Colors.redAccent))),
