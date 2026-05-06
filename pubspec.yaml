@@ -43,11 +43,26 @@ dependencies:
   # Utilities
   intl: ^0.19.0
   gal: ^2.3.2
+  flutter_native_splash: ^2.4.7
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
 
+flutter_native_splash:
+  color: "#141310"
+  image: logo_app.png
+  android_12:
+    color: "#141310"
+    image: logo_app.png
+  ios: true
+  android: true
+  fullscreen: true
+
 flutter:
   uses-material-design: true
+  assets:
+    - assets/welcome.png
+    - logo_app.png
