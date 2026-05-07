@@ -48,6 +48,13 @@ app.*.map.json
 Payload/
 *.ipa
 
-# Production keystore — commit dev only
+# Production secrets — NEVER commit
+*.jks
+key.properties
+*.keystore
+*.p12
+*.cer
 *.ipa
 *.aab
+google-services.json
+GoogleService-Info.plist
