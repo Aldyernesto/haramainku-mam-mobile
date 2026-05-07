@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -94,6 +96,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildCoverPreview(String pathOrUrl) {
+    final isUrl = pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://');
+    return Image(
+      image: isUrl ? NetworkImage(pathOrUrl) : FileImage(File(pathOrUrl)) as ImageProvider,
+      width: 48, height: 48, fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => const SizedBox(),
+    );
+  }
+
   void _showCreateDialog(BuildContext context, VoidCallback? refetch) {
     showModalBottomSheet(
       context: context, isScrollControlled: true,
@@ -110,13 +121,34 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 8),
           Row(children: [
             if (_coverCtrl.text.isNotEmpty)
-              ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.file(File(_coverCtrl.text), width: 48, height: 48, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox()))
+              ClipRRect(borderRadius: BorderRadius.circular(8), child: _buildCoverPreview(_coverCtrl.text))
             else
               Container(width: 48, height: 48, decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: AppTheme.gold.withValues(alpha: 0.1)), child: const Icon(Icons.image, color: AppTheme.gold)),
             const SizedBox(width: 12),
             OutlinedButton.icon(onPressed: () async {
               final img = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 800);
-              if (img != null) setState(() => _coverCtrl.text = img.path);
+              if (img == null) return;
+              final token = await context.read<AuthProvider>().token;
+              if (token == null) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Not authenticated')));
+                return;
+              }
+              try {
+                final uri = Uri.parse('https://mam.haramaintour.com/api/upload/cover');
+                final req = http.MultipartRequest('POST', uri)
+                  ..headers['Authorization'] = 'Bearer $token'
+                  ..files.add(await http.MultipartFile.fromPath('file', img.path));
+                final res = await req.send();
+                if (res.statusCode == 200) {
+                  final body = await res.stream.bytesToString();
+                  final url = (jsonDecode(body) as Map)['url'] as String;
+                  setState(() => _coverCtrl.text = url);
+                } else {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cover upload failed')));
+                }
+              } catch (_) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cover upload failed')));
+              }
             }, icon: const Icon(Icons.image, size: 16), label: const Text('Pick Cover')),
           ]),
           const SizedBox(height: 20),

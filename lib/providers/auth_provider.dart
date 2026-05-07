@@ -17,6 +17,7 @@ class AuthProvider extends ChangeNotifier {
   User? get user => _user;
   bool get isAuthenticated => _user != null;
   bool get isLoading => _isLoading;
+  Future<String?> get token => _storage.read(key: 'auth_token');
 
   Future<void> _loadUser() async {
     final token = await _storage.read(key: 'auth_token');

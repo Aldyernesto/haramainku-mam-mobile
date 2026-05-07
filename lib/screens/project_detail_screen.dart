@@ -7,6 +7,7 @@ import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:gal/gal.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
@@ -427,7 +428,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final imgUrl = f['thumbnailPath'] != null ? 'https://mam.haramaintour.com/api/thumbnail/${f['id']}' : 'https://mam.haramaintour.com/api/download?fileIds=${f['id']}&inline=1';
     showDialog(context: ctx, builder: (_) => Dialog(backgroundColor: AppTheme.surfaceContainerHighest, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(20)), child: Image.network(imgUrl, fit: BoxFit.contain, errorBuilder: (_, __, ___) => Container(height: 200, color: AppTheme.surface, child: const Center(child: Icon(Icons.insert_drive_file, size: 48, color: AppTheme.onSurfaceVariant))))),
+        ClipRRect(borderRadius: const BorderRadius.vertical(top: Radius.circular(20)), child: CachedNetworkImage(imageUrl: imgUrl, fit: BoxFit.contain, errorWidget: (_, __, ___) => Container(height: 200, color: AppTheme.surface, child: const Center(child: Icon(Icons.insert_drive_file, size: 48, color: AppTheme.onSurfaceVariant))))),
         Padding(padding: const EdgeInsets.all(16), child: Column(children: [
           Text(f['originalName'] ?? '', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.onSurface)),
           const SizedBox(height: 4), Text(_fmt(f['size'] ?? 0), style: const TextStyle(fontSize: 13, color: AppTheme.onSurfaceVariant)), const SizedBox(height: 16),
@@ -588,7 +589,7 @@ class _FileTile extends StatelessWidget {
             : Container(width: 44, height: 44, decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: AppTheme.gold.withValues(alpha: 0.08)), child: Icon(Icons.insert_drive_file, color: AppTheme.gold, size: 22)),
         title: Text(file['originalName'] ?? '', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.onSurface), maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text(_fmt(file['size'] ?? 0), style: const TextStyle(fontSize: 12, color: AppTheme.onSurfaceVariant)),
-        trailing: !selMode && file['thumbnailPath'] != null ? ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network('https://mam.haramaintour.com/api/thumbnail/${file['id']}', width: 40, height: 40, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox())) : null,
+        trailing: !selMode && file['thumbnailPath'] != null ? ClipRRect(borderRadius: BorderRadius.circular(6), child: CachedNetworkImage(imageUrl: 'https://mam.haramaintour.com/api/thumbnail/${file['id']}', width: 40, height: 40, fit: BoxFit.cover, errorWidget: (_, __, ___) => const SizedBox())) : null,
       ),
     ),
   );
