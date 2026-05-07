@@ -67,7 +67,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           },
           child: Scaffold(
           extendBodyBehindAppBar: !_selMode,
-          appBar: _selMode ? _selBar(title, folders, files) : _bar(title: '$title [v13]', client: client),
+          appBar: _selMode ? _selBar(title, folders, files) : _bar(title: title, client: client),
           body: Stack(children: [Container(color: AppTheme.surface, child: CustomScrollView(slivers: [
             if (!_selMode) SliverAppBar(expandedHeight: 160, pinned: true, backgroundColor: AppTheme.navyGlass.withValues(alpha: 0.3), automaticallyImplyLeading: false,
               flexibleSpace: FlexibleSpaceBar(title: Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppTheme.gold)),
