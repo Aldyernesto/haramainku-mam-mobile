@@ -50,6 +50,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.3
 
 flutter_native_splash:
   color: "#141310"
@@ -60,6 +61,14 @@ flutter_native_splash:
   ios: true
   android: true
   fullscreen: true
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "logo_app.png"
+  adaptive_icon_background: "#141310"
+  adaptive_icon_foreground: "logo_app.png"
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true
