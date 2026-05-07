@@ -208,24 +208,45 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           return;
         }
 
-        // 2. Upload chunks via REST multipart
+        // 2. Upload chunks via REST multipart (streaming — no full file in RAM)
         final token = await const FlutterSecureStorage().read(key: 'auth_token') ?? '';
         final cs = (initRes.data?['initiateUpload']?['chunkSize'] as int?) ?? 10485760;
         final totalChunks = (initRes.data?['initiateUpload']?['totalChunks'] as int?) ?? 1;
         _upTotalChunks = totalChunks;
-        final bytes = await File(f.path!).readAsBytes();
-        for (int i = 0; i < totalChunks; i++) {
-          final start = i * cs;
-          final end = (start + cs) > f.size ? f.size : (start + cs);
-          final mpReq = http.MultipartRequest('POST', Uri.parse('https://mam.haramaintour.com/api/upload/chunk'));
-          mpReq.headers['Authorization'] = 'Bearer $token';
-          mpReq.fields['sessionId'] = sessionId;
-          mpReq.fields['chunkIndex'] = i.toString();
-          mpReq.files.add(http.MultipartFile.fromBytes('file', bytes.sublist(start, end), filename: 'chunk'));
-          final streamRes = await mpReq.send();
-          await streamRes.stream.drain();
-          _upChunkIdx = i + 1;
-          _dialogSetState?.call(() {});
+        final raf = await File(f.path!).open(mode: FileMode.read);
+        final httpClient = http.Client();
+        try {
+          for (int i = 0; i < totalChunks; i++) {
+            final start = i * cs;
+            final end = (start + cs) > f.size ? f.size : (start + cs);
+            final length = end - start;
+            await raf.setPosition(start);
+            final chunkBytes = await raf.read(length);
+
+            // Retry up to 3 times for iOS network flakiness
+            int retries = 0;
+            while (retries < 3) {
+              try {
+                final mpReq = http.MultipartRequest('POST', Uri.parse('https://mam.haramaintour.com/api/upload/chunk'));
+                mpReq.headers['Authorization'] = 'Bearer $token';
+                mpReq.fields['sessionId'] = sessionId;
+                mpReq.fields['chunkIndex'] = i.toString();
+                mpReq.files.add(http.MultipartFile.fromBytes('file', chunkBytes, filename: 'chunk'));
+                final streamRes = await httpClient.send(mpReq).timeout(const Duration(seconds: 120));
+                await streamRes.stream.drain();
+                break; // success, keluar dari retry loop
+              } catch (_) {
+                retries++;
+                if (retries >= 3) rethrow;
+                await Future.delayed(Duration(seconds: retries * 2)); // backoff
+              }
+            }
+            _upChunkIdx = i + 1;
+            _dialogSetState?.call(() {});
+          }
+        } finally {
+          await raf.close();
+          httpClient.close();
         }
 
         // 3. Complete upload
