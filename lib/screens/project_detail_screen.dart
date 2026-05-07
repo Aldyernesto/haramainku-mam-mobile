@@ -13,6 +13,12 @@ import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 import 'chat_screen.dart';
 
+class _ChunkData {
+  final int index;
+  final List<int> bytes;
+  const _ChunkData({required this.index, required this.bytes});
+}
+
 const _getProject = '''query GetProject(\$id: ID!) { project(id: \$id) { id title description totalFiles totalSize folders { id name totalFiles createdAt } } }''';
 const _getFolder = '''query GetFolder(\$id: ID!) { folder(id: \$id) { id name totalFiles folderType project { id title } parent { id name } children { id name totalFiles createdAt } files { id originalName mimeType size createdAt thumbnailPath } } }''';
 const _pickerProject = '''query PickerProject(\$id: ID!) { project(id: \$id) { id title folders { id name } } }''';
@@ -208,40 +214,49 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           return;
         }
 
-        // 2. Upload chunks via REST multipart (streaming — no full file in RAM)
+        // 2. Upload chunks via REST multipart (parallel 4 — IDM-style)
         final token = await const FlutterSecureStorage().read(key: 'auth_token') ?? '';
         final cs = (initRes.data?['initiateUpload']?['chunkSize'] as int?) ?? 10485760;
         final totalChunks = (initRes.data?['initiateUpload']?['totalChunks'] as int?) ?? 1;
         _upTotalChunks = totalChunks;
         final raf = await File(f.path!).open(mode: FileMode.read);
         final httpClient = http.Client();
+        const maxParallel = 4; // iOS safe — 4 concurrent HTTP per host
         try {
-          for (int i = 0; i < totalChunks; i++) {
-            final start = i * cs;
-            final end = (start + cs) > f.size ? f.size : (start + cs);
-            final length = end - start;
-            await raf.setPosition(start);
-            final chunkBytes = await raf.read(length);
-
-            // Retry up to 3 times for iOS network flakiness
-            int retries = 0;
-            while (retries < 3) {
-              try {
-                final mpReq = http.MultipartRequest('POST', Uri.parse('https://mam.haramaintour.com/api/upload/chunk'));
-                mpReq.headers['Authorization'] = 'Bearer $token';
-                mpReq.fields['sessionId'] = sessionId;
-                mpReq.fields['chunkIndex'] = i.toString();
-                mpReq.files.add(http.MultipartFile.fromBytes('file', chunkBytes, filename: 'chunk'));
-                final streamRes = await httpClient.send(mpReq).timeout(const Duration(seconds: 120));
-                await streamRes.stream.drain();
-                break; // success, keluar dari retry loop
-              } catch (_) {
-                retries++;
-                if (retries >= 3) rethrow;
-                await Future.delayed(Duration(seconds: retries * 2)); // backoff
-              }
+          int i = 0;
+          while (i < totalChunks) {
+            // Pre-read next batch of chunks from disk (fast, sequential)
+            final batch = <_ChunkData>[];
+            while (batch.length < maxParallel && i < totalChunks) {
+              final start = i * cs;
+              final length = (start + cs > f.size) ? (f.size - start) : cs;
+              await raf.setPosition(start);
+              batch.add(_ChunkData(index: i, bytes: await raf.read(length)));
+              i++;
             }
-            _upChunkIdx = i + 1;
+
+            // Upload batch in parallel
+            final results = await Future.wait(batch.map((c) async {
+              int retries = 0;
+              while (retries < 3) {
+                try {
+                  final mpReq = http.MultipartRequest('POST', Uri.parse('https://mam.haramaintour.com/api/upload/chunk'));
+                  mpReq.headers['Authorization'] = 'Bearer $token';
+                  mpReq.fields['sessionId'] = sessionId;
+                  mpReq.fields['chunkIndex'] = c.index.toString();
+                  mpReq.files.add(http.MultipartFile.fromBytes('file', c.bytes, filename: 'chunk'));
+                  final streamRes = await httpClient.send(mpReq).timeout(const Duration(seconds: 120));
+                  await streamRes.stream.drain();
+                  return;
+                } catch (_) {
+                  retries++;
+                  if (retries >= 3) rethrow;
+                  await Future.delayed(Duration(seconds: retries * 2));
+                }
+              }
+            }));
+
+            _upChunkIdx = i;
             _dialogSetState?.call(() {});
           }
         } finally {
