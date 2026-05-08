@@ -19,13 +19,12 @@ workflows:
         script: flutter pub get
       - name: Generate app icons
         script: dart run flutter_launcher_icons
-      - name: Build iOS release Runner.app
+      - name: Patch Xcode project (remove team requirement)
         script: |
-          flutter build ios --release --no-codesign -- \
-            DEVELOPMENT_TEAM="" \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+          /usr/libexec/PlistBuddy -c "Add :PlatformInfo:TargetedDeviceFamily string "1,2"" ios/Runner.xcodeproj/project.pbxproj 2>/dev/null || true
+          find ios -name "*.pbxproj" -exec sed -i '' 's/DEVELOPMENT_TEAM = [^;]*;/DEVELOPMENT_TEAM = "";/g' {} \;
+      - name: Build iOS release Runner.app
+        script: flutter build ios --release --no-codesign
       - name: Package unsigned IPA
         script: |
           mkdir -p Payload
