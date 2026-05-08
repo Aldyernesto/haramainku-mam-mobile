@@ -4,6 +4,7 @@ import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'providers/auth_provider.dart';
+import 'providers/notification_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/home_screen.dart';
@@ -47,8 +48,11 @@ class _HaramainKUAppState extends State<HaramainKUApp> {
     }
     return GraphQLProvider(
       client: ValueNotifier(widget.client),
-      child: ChangeNotifierProvider(
-        create: (_) => AuthProvider(widget.client, widget.secureStorage),
+      child: MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthProvider(widget.client, widget.secureStorage)),
+          ChangeNotifierProvider(create: (_) => NotificationProvider(widget.client)),
+        ],
         child: MaterialApp(
           title: 'HaramainKU MAM',
           debugShowCheckedModeBanner: false,

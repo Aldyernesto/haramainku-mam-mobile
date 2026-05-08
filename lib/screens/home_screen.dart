@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/notification_bell.dart';
 import '../theme/app_theme.dart';
 import 'project_detail_screen.dart';
 import 'uploads_screen.dart';
@@ -64,6 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
             backgroundColor: AppTheme.navyGlass.withValues(alpha: 0.3),
             title: const Text('MEDIA'),
             actions: [
+              const NotificationBell(),
               IconButton(icon: const Icon(Icons.search, color: AppTheme.gold), onPressed: () => showSearch(context: context, delegate: _ProjectSearch(projects))),
               if (user.canUpload)
                 IconButton(icon: const Icon(Icons.add_box_outlined, color: AppTheme.gold), onPressed: () => _showCreateDialog(context, refetch)),
