@@ -19,6 +19,16 @@ class _ChunkData {
   const _ChunkData({required this.index, required this.bytes});
 }
 
+enum _UpStatus { pending, uploading, done, error }
+
+class _UploadingFile {
+  final String name;
+  _UpStatus status;
+  double percent;
+  String? error;
+  _UploadingFile({required this.name, this.status = _UpStatus.pending, this.percent = 0.0, this.error});
+}
+
 const _getProject = '''query GetProject(\$id: ID!) { project(id: \$id) { id title description totalFiles totalSize folders { id name totalFiles createdAt } } }''';
 const _getFolder = '''query GetFolder(\$id: ID!) { folder(id: \$id) { id name totalFiles folderType project { id title } parent { id name } children { id name totalFiles createdAt } files { id originalName mimeType size createdAt thumbnailPath } } }''';
 const _pickerProject = '''query PickerProject(\$id: ID!) { project(id: \$id) { id title folders { id name } } }''';
@@ -143,66 +153,138 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     if (validFiles.isEmpty) return;
     if (!context.mounted) return;
 
-    // Upload progress state
-    StateSetter? _dialogSetState;
-    int _upFileIdx = 0;
-    int _upChunkIdx = 0;
-    int _upTotalChunks = 1;
-    String _upCurFile = validFiles.first.name;
-    bool _upDone = false;
-    String? _upError;
+    // Upload progress state per file
+    final fileStates = <_UploadingFile>[];
+    for (final f in validFiles) {
+      fileStates.add(_UploadingFile(name: f.name, status: _UpStatus.pending, percent: 0.0));
+    }
+    int _activeIdx = 0;
+    bool _showAll = validFiles.length <= 3;
+    StateSetter? _sheetSetState;
 
-    // Show progress dialog (don't await — runs in parallel with upload)
-    showDialog<void>(
+    // Show upload bottom sheet (don't await — runs in parallel with upload)
+    showModalBottomSheet<void>(
       context: context,
-      barrierDismissible: false,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: AppTheme.surfaceContainerHigh,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) {
-          _dialogSetState = setState;
-          return AlertDialog(
-            backgroundColor: AppTheme.surfaceContainerHigh,
-            title: Text(_upError != null ? 'Upload Failed' : _upDone ? 'Upload Complete!' : 'Uploading...',
-                style: TextStyle(color: _upError != null ? Colors.redAccent : AppTheme.onSurface, fontWeight: FontWeight.w700)),
-            content: Column(mainAxisSize: MainAxisSize.min, children: [
-              if (_upError != null)
-                Text(_upError!, style: const TextStyle(color: Colors.redAccent, fontSize: 13))
-              else ...[
-                Text(_upCurFile, style: const TextStyle(color: AppTheme.gold, fontSize: 14, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 16),
-                ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(
-                  value: _upTotalChunks > 0 ? (_upChunkIdx / _upTotalChunks).clamp(0.0, 1.0) : 0,
-                  minHeight: 6, color: AppTheme.gold, backgroundColor: AppTheme.surfaceContainer,
-                )),
-                const SizedBox(height: 10),
-                Text('File ${_upFileIdx + 1} of ${validFiles.length}  —  Chunk $_upChunkIdx / $_upTotalChunks',
-                    style: const TextStyle(color: AppTheme.onSurfaceVariant, fontSize: 12)),
-                if (_upDone)
-                  Padding(padding: const EdgeInsets.only(top: 12), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    const Icon(Icons.check_circle, color: AppTheme.gold, size: 20),
-                    const SizedBox(width: 8),
-                    Text('${validFiles.length} file(s) uploaded', style: const TextStyle(color: AppTheme.gold, fontSize: 13)),
-                  ])),
-              ],
-            ]),
-            actions: (_upError != null || _upDone) ? [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: Text('OK', style: const TextStyle(color: AppTheme.gold))),
-            ] : null,
+          _sheetSetState = setState;
+          final displayFiles = _showAll ? fileStates : [...fileStates.take(3)];
+          final hasErrors = fileStates.any((s) => s.status == _UpStatus.error);
+          final allDone = fileStates.every((s) => s.status == _UpStatus.done || s.status == _UpStatus.error);
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header
+                  Row(children: [
+                    Expanded(child: Text(
+                      hasErrors ? 'Upload Complete (with errors)' : allDone ? '${fileStates.where((s) => s.status == _UpStatus.done).length} Files Uploaded' : 'Uploading ${fileStates.where((s) => s.status != _UpStatus.done).length} of ${validFiles.length}',
+                      style: TextStyle(color: hasErrors ? Colors.redAccent : AppTheme.onSurface, fontSize: 18, fontWeight: FontWeight.w700),
+                    )),
+                    if (allDone)
+                      IconButton(onPressed: () { Navigator.pop(ctx); if (mounted) refetch?.call(); }, icon: const Icon(Icons.close, color: AppTheme.onSurfaceVariant)),
+                  ]),
+                  const SizedBox(height: 12),
+                  // File list
+                  ...List.generate(displayFiles.length, (i) {
+                    final s = displayFiles[i];
+                    final actualIdx = _showAll ? i : (i < 3 ? i : 0);
+                    final isActive = s.status == _UpStatus.uploading;
+                    final isDone = s.status == _UpStatus.done;
+                    final isErr = s.status == _UpStatus.error;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isActive ? AppTheme.gold.withValues(alpha: 0.08) : AppTheme.surfaceContainer,
+                        borderRadius: BorderRadius.circular(12),
+                        border: isActive ? Border.all(color: AppTheme.gold.withValues(alpha: 0.3)) : null,
+                      ),
+                      child: Row(children: [
+                        // Status icon
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          child: isDone ? const Icon(Icons.check_circle, color: Color(0xFF4CAF50), size: 22)
+                              : isErr ? const Icon(Icons.error, color: Colors.redAccent, size: 22)
+                              : s.status == _UpStatus.pending ? const Icon(Icons.hourglass_empty, color: AppTheme.onSurfaceVariant, size: 22)
+                              : const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: AppTheme.gold)),
+                        ),
+                        const SizedBox(width: 12),
+                        // Name + progress
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(s.name, style: TextStyle(color: isDone ? AppTheme.onSurfaceVariant : AppTheme.onSurface, fontSize: 13, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(3),
+                              child: LinearProgressIndicator(
+                                value: s.percent,
+                                minHeight: 4,
+                                color: isErr ? Colors.redAccent : isDone ? const Color(0xFF4CAF50) : AppTheme.gold,
+                                backgroundColor: AppTheme.surfaceContainerHighest,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              isErr ? (s.error ?? 'Failed') : isDone ? '100% · Complete' : s.status == _UpStatus.pending ? 'Waiting...' : '${(s.percent * 100).toStringAsFixed(0)}%',
+                              style: TextStyle(color: isErr ? Colors.redAccent : AppTheme.onSurfaceVariant, fontSize: 11),
+                            ),
+                          ]),
+                        ),
+                      ]),
+                    );
+                  }),
+                  // Show more / show less toggle
+                  if (validFiles.length > 3)
+                    GestureDetector(
+                      onTap: () => setState(() => _showAll = !_showAll),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 8),
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(_showAll ? Icons.expand_less : Icons.expand_more, color: AppTheme.gold, size: 18),
+                          const SizedBox(width: 4),
+                          Text(
+                            _showAll ? 'Show less' : 'Show all (${validFiles.length} files)',
+                            style: const TextStyle(color: AppTheme.gold, fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  // Done button
+                  if (allDone || hasErrors)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: SizedBox(width: double.infinity, child: ElevatedButton(
+                        onPressed: () { Navigator.pop(ctx); if (mounted) refetch?.call(); },
+                        style: ElevatedButton.styleFrom(backgroundColor: AppTheme.gold, foregroundColor: const Color(0xFF141310), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                        child: const Text('Close', style: TextStyle(fontWeight: FontWeight.w700)),
+                      )),
+                    ),
+                ],
+              ),
+            ),
           );
         },
       ),
     );
 
     // Run upload loop
-    try {
-      for (int fi = 0; fi < validFiles.length; fi++) {
-        final f = validFiles[fi];
-        _upFileIdx = fi;
-        _upCurFile = f.name;
-        _upChunkIdx = 0;
-        _upTotalChunks = 1;
-        _dialogSetState?.call(() {});
+    for (int fi = 0; fi < validFiles.length; fi++) {
+      final f = validFiles[fi];
+      final st = fileStates[fi];
+      st.status = _UpStatus.uploading;
+      _activeIdx = fi;
+      _sheetSetState?.call(() {});
 
-        // 1. Latency check via simple HTTP ping
+      try {
+        // 1. Latency check
         final pingStart = DateTime.now().millisecondsSinceEpoch;
         try { await http.get(Uri.parse('https://mam.haramaintour.com/api/qr-status/ping')).timeout(const Duration(seconds: 3)); } catch (_) {}
         final latencyMs = DateTime.now().millisecondsSinceEpoch - pingStart;
@@ -213,34 +295,24 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           variables: {'input': {'filename': f.name, 'totalSize': f.size, 'projectId': realProjectId ?? widget.projectId, 'folderId': widget.isFolder ? widget.projectId : null, 'clientLatencyMs': latencyMs}},
         ));
         final sessionId = initRes.data?['initiateUpload']?['id'];
-        if (sessionId == null) {
-          _upError = 'Failed to initiate upload for ${f.name}';
-          _dialogSetState?.call(() {});
-          return;
-        }
+        if (sessionId == null) throw Exception('Failed to initiate');
 
         final uploadMode = initRes.data?['initiateUpload']?['uploadMode'] ?? 'direct';
         final presignedUrl = initRes.data?['initiateUpload']?['presignedUrl'];
         final r2Key = initRes.data?['initiateUpload']?['r2Key'];
         final token = await const FlutterSecureStorage().read(key: 'auth_token') ?? '';
         final cs = (initRes.data?['initiateUpload']?['chunkSize'] as int?) ?? 52428800;
-        final totalChunks = (initRes.data?['initiateUpload']?['totalChunks'] as int?) ?? 1;
-        _upTotalChunks = (uploadMode == 'r2') ? 1 : totalChunks;
+        final totalChunks = uploadMode == 'r2' ? 1 : ((initRes.data?['initiateUpload']?['totalChunks'] as int?) ?? 1);
 
-        // ---------- R2 MODE: single direct upload to edge ----------
+        // ---------- R2 MODE ----------
         if (uploadMode == 'r2' && presignedUrl != null) {
           final fileBytes = await File(f.path!).readAsBytes();
           int retries = 0;
           while (retries < 3) {
             try {
-              _upChunkIdx = 0;
-              _dialogSetState?.call(() {});
+              st.percent = 0.5; _sheetSetState?.call(() {});
               final putRes = await http.put(Uri.parse(presignedUrl), body: fileBytes, headers: {'Content-Type': 'application/octet-stream'}).timeout(const Duration(seconds: 300));
-              if (putRes.statusCode == 200) {
-                _upChunkIdx = 1;
-                _dialogSetState?.call(() {});
-                break;
-              }
+              if (putRes.statusCode == 200) break;
               retries++;
               if (retries >= 3) throw Exception('R2 upload failed: ${putRes.statusCode}');
               await Future.delayed(Duration(seconds: retries * 3));
@@ -250,17 +322,17 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               await Future.delayed(Duration(seconds: retries * 3));
             }
           }
-          // Complete R2 upload → server pulls from R2 to NAS
           await client.mutate(MutationOptions(
             document: gql('''mutation CompleteR2Upload(\$sessionId: ID!, \$r2Key: String!) { completeUpload(sessionId: \$sessionId, r2Key: \$r2Key) { id filename } }'''),
             variables: {'sessionId': sessionId, 'r2Key': r2Key},
           ));
-          _upDone = true;
-          _dialogSetState?.call(() {});
-          continue; // next file
+          st.percent = 1.0;
+          st.status = _UpStatus.done;
+          _sheetSetState?.call(() {});
+          continue;
         }
 
-        // ---------- DIRECT MODE: chunked multipart upload ----------
+        // ---------- DIRECT MODE: chunked multipart ----------
         final raf = await File(f.path!).open(mode: FileMode.read);
         final httpClient = http.Client();
         const maxParallel = 4;
@@ -275,7 +347,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               batch.add(_ChunkData(index: i, bytes: await raf.read(length)));
               i++;
             }
-
             await Future.wait(batch.map((c) async {
               int retries = 0;
               while (retries < 3) {
@@ -285,8 +356,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   mpReq.fields['sessionId'] = sessionId;
                   mpReq.fields['chunkIndex'] = c.index.toString();
                   mpReq.files.add(http.MultipartFile.fromBytes('file', c.bytes, filename: 'chunk'));
-                  final streamRes = await httpClient.send(mpReq).timeout(const Duration(seconds: 120));
-                  await streamRes.stream.drain();
+                  await httpClient.send(mpReq).timeout(const Duration(seconds: 120)).then((r) => r.stream.drain());
                   return;
                 } catch (_) {
                   retries++;
@@ -295,32 +365,27 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 }
               }
             }));
-
-            _upChunkIdx = i;
-            _dialogSetState?.call(() {});
+            st.percent = i / totalChunks;
+            _sheetSetState?.call(() {});
           }
         } finally {
           await raf.close();
           httpClient.close();
         }
 
-        // Complete direct upload
         await client.mutate(MutationOptions(
           document: gql('''mutation CompleteUpload(\$sessionId: ID!) { completeUpload(sessionId: \$sessionId) { id filename } }'''),
           variables: {'sessionId': sessionId},
         ));
+        st.percent = 1.0;
+        st.status = _UpStatus.done;
+        _sheetSetState?.call(() {});
+      } catch (e) {
+        st.status = _UpStatus.error;
+        st.error = e.toString();
+        _sheetSetState?.call(() {});
       }
-      _upDone = true;
-      _dialogSetState?.call(() {});
-    } catch (e) {
-      _upError = e.toString();
-      _dialogSetState?.call(() {});
     }
-
-    // Wait for user to dismiss dialog, then refetch
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (_upDone && mounted) refetch?.call();
-    });
   }
 
   void _showFabMenu(BuildContext ctx, GraphQLClient client, String folderName, VoidCallback? refetch, String? realProjectId, String? folderType) {
