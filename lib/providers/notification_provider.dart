@@ -1,22 +1,31 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
+
+final _localNotifs = FlutterLocalNotificationsPlugin();
 
 class NotificationProvider extends ChangeNotifier {
   final GraphQLClient _client;
   int _unread = 0;
   List<_NotifItem> _items = [];
   Timer? _timer;
+  int _lastSoundAt = 0; // debounce sound (ms timestamp)
 
   int get unreadCount => _unread;
   List<_NotifItem> get items => _items;
   bool get hasUnread => _unread > 0;
 
-  NotificationProvider(this._client) { _fetch(); _startPolling(); }
+  NotificationProvider(this._client) { _fetch(); _startPolling(); _initSound(); }
 
   static NotificationProvider of(BuildContext context) {
     return Provider.of<NotificationProvider>(context, listen: false);
+  }
+
+  void _initSound() async {
+    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    await _localNotifs.initialize(const InitializationSettings(android: android));
   }
 
   void _startPolling() {
@@ -25,6 +34,7 @@ class NotificationProvider extends ChangeNotifier {
 
   Future<void> _fetch() async {
     try {
+      final prevCount = _unread;
       final res = await _client.query(QueryOptions(
         document: gql(r'''
           query {
@@ -34,7 +44,7 @@ class NotificationProvider extends ChangeNotifier {
         '''),
         fetchPolicy: FetchPolicy.networkOnly,
       ));
-      if (res.hasException) { debugPrint('[notif] ${res.exception}'); return; }
+      if (res.hasException) return;
       final raw = res.data?['notifications'] as List? ?? [];
       _items = raw.map((n) => _NotifItem(
         id: n['id'], type: n['type'] ?? '',
@@ -44,8 +54,29 @@ class NotificationProvider extends ChangeNotifier {
         createdAt: DateTime.tryParse(n['createdAt'] ?? '') ?? DateTime.now(),
       )).toList();
       _unread = res.data?['unreadNotificationCount'] ?? 0;
+
+      // Play sound when new notifications arrive (debounce 5s for bulk)
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (_unread > prevCount && (now - _lastSoundAt) > 5000) {
+        _lastSoundAt = now;
+        final latest = _items.isNotEmpty ? _items.first : null;
+        if (latest != null) {
+          _localNotifs.show(
+            latest.hashCode,
+            latest.title,
+            latest.body,
+            const NotificationDetails(
+              android: AndroidNotificationDetails(
+                'haramainku_general', 'HaramainKU',
+                importance: Importance.high, priority: Priority.high,
+                playSound: true, enableVibration: true,
+              ),
+            ),
+          );
+        }
+      }
       notifyListeners();
-    } catch (e) { debugPrint('[notif] fetch error: $e'); }
+    } catch (_) {}
   }
 
   Future<void> markAllRead() async {
