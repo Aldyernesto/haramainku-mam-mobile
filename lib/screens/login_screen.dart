@@ -38,8 +38,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (token == null) throw Exception('Auth failed');
 
       final authProv = context.read<AuthProvider>();
-      await authProv.secureStorage.write(key: 'auth_token', value: token);
-      authProv.setToken(token);
+      await authProv.googleLogin(token);
       if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
     } catch (e) {
       if (mounted) setState(() => _error = '$e');

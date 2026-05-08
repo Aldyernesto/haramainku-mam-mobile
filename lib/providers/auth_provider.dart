@@ -57,6 +57,11 @@ class AuthProvider extends ChangeNotifier {
     return false;
   }
 
+  Future<void> googleLogin(String token) async {
+    await _storage.write(key: 'auth_token', value: token);
+    await _fetchMe();
+  }
+
   Future<String?> login(String email, String password) async {
     const mutation = '''
       mutation Login(\$email: String!, \$password: String!) {
