@@ -53,6 +53,17 @@
 		<string>Simpan file ke galeri setelah download</string>
 		<key>NSMicrophoneUsageDescription</key>
 		<string>Mikrofon digunakan untuk merekam video</string>
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.googleusercontent.apps.576780723867-d0kkna92ip7usmt4i7k1ha4t2m344n0k</string>
+				</array>
+			</dict>
+		</array>
 		<key>UIStatusBarHidden</key>
 		<true/>
 		<key>UIViewControllerBasedStatusBarAppearance</key>
