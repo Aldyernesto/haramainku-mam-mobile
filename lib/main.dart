@@ -11,7 +11,6 @@ void main() async {
 
   try {
     final client = await initGraphQLClient(secureStorage);
-    initFCM(client); // fire-and-forget, best-effort
     runApp(HaramainKUApp(client: client, secureStorage: secureStorage));
   } catch (e, st) {
     runApp(_ErrorApp(error: e, stack: st));

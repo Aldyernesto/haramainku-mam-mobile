@@ -7,35 +7,35 @@ import 'package:graphql_flutter/graphql_flutter.dart';
 final _localNotifs = FlutterLocalNotificationsPlugin();
 
 Future<void> initFCM(GraphQLClient client) async {
-  // Android channel for foreground notifications
-  await _localNotifs.initialize(
-    const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
-  );
-
   try {
+    await _localNotifs.initialize(
+      const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
+    );
+    print('[FCM] local notifs initialized');
     await Firebase.initializeApp();
+    print('[FCM] firebase initialized');
     final fcm = FirebaseMessaging.instance;
     await fcm.requestPermission(alert: true, badge: true, sound: true);
+    print('[FCM] permission granted');
 
     final token = await fcm.getToken();
-    debugPrint('[FCM] Token: $token');
+    print('[FCM] token: $token');
     if (token != null) {
       final res = await client.mutate(MutationOptions(
         document: gql(r'mutation RegisterFcmToken($token: String!) { registerFcmToken(token: $token) }'),
         variables: {'token': token},
       ));
-      debugPrint('[FCM] Registered: ${!res.hasException}');
+      print('[FCM] registered: ${!res.hasException}');
     }
 
     fcm.onTokenRefresh.listen((t) {
-      debugPrint('[FCM] Token refreshed: $t');
+      print('[FCM] token refreshed: $t');
       client.mutate(MutationOptions(
         document: gql(r'mutation RegisterFcmToken($token: String!) { registerFcmToken(token: $token) }'),
         variables: {'token': t},
-      )).catchError((e) => debugPrint('[FCM] refresh error: $e'));
+      )).catchError((e) => print('[FCM] refresh error: $e'));
     });
 
-    // Foreground messages → local notification with sound
     FirebaseMessaging.onMessage.listen((msg) {
       _localNotifs.show(
         msg.hashCode,
@@ -49,11 +49,10 @@ Future<void> initFCM(GraphQLClient client) async {
       );
     });
 
-    // Background tap → open app
     FirebaseMessaging.onMessageOpenedApp.listen((msg) {
-      debugPrint('[FCM] Message opened: ${msg.data}');
+      print('[FCM] message opened: ${msg.data}');
     });
   } catch (e) {
-    debugPrint('[FCM] Init error: $e');
+    print('[FCM] init error: $e');
   }
 }

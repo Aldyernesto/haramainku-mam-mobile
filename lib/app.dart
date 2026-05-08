@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'providers/auth_provider.dart';
 import 'providers/notification_provider.dart';
+import 'services/fcm_handler.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/home_screen.dart';
@@ -31,6 +32,7 @@ class _HaramainKUAppState extends State<HaramainKUApp> {
   @override void initState() {
     super.initState();
     _check();
+    initFCM(widget.client); // init push notifications after Flutter is ready
   }
 
   Future<void> _check() async {
