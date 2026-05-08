@@ -202,10 +202,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         _upTotalChunks = 1;
         _dialogSetState?.call(() {});
 
-        // 1. Initiate upload via GraphQL
+        // 1. Latency check via simple HTTP ping
+        final pingStart = DateTime.now().millisecondsSinceEpoch;
+        try { await http.get(Uri.parse('https://mam.haramaintour.com/api/qr-status/ping')).timeout(const Duration(seconds: 3)); } catch (_) {}
+        final latencyMs = DateTime.now().millisecondsSinceEpoch - pingStart;
+
+        // 2. Initiate upload via GraphQL
         final initRes = await client.mutate(MutationOptions(
-          document: gql('''mutation InitiateUpload(\$input: InitiateUploadInput!) { initiateUpload(input: \$input) { id chunkSize totalChunks } }'''),
-          variables: {'input': {'filename': f.name, 'totalSize': f.size, 'projectId': realProjectId ?? widget.projectId, 'folderId': widget.isFolder ? widget.projectId : null}},
+          document: gql('''mutation InitiateUpload(\$input: InitiateUploadInput!) { initiateUpload(input: \$input) { id chunkSize totalChunks uploadMode presignedUrl r2Key } }'''),
+          variables: {'input': {'filename': f.name, 'totalSize': f.size, 'projectId': realProjectId ?? widget.projectId, 'folderId': widget.isFolder ? widget.projectId : null, 'clientLatencyMs': latencyMs}},
         ));
         final sessionId = initRes.data?['initiateUpload']?['id'];
         if (sessionId == null) {
@@ -214,18 +219,54 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           return;
         }
 
-        // 2. Upload chunks via REST multipart (parallel 4 — IDM-style)
+        final uploadMode = initRes.data?['initiateUpload']?['uploadMode'] ?? 'direct';
+        final presignedUrl = initRes.data?['initiateUpload']?['presignedUrl'];
+        final r2Key = initRes.data?['initiateUpload']?['r2Key'];
         final token = await const FlutterSecureStorage().read(key: 'auth_token') ?? '';
-        final cs = (initRes.data?['initiateUpload']?['chunkSize'] as int?) ?? 10485760;
+        final cs = (initRes.data?['initiateUpload']?['chunkSize'] as int?) ?? 52428800;
         final totalChunks = (initRes.data?['initiateUpload']?['totalChunks'] as int?) ?? 1;
-        _upTotalChunks = totalChunks;
+        _upTotalChunks = (uploadMode == 'r2') ? 1 : totalChunks;
+
+        // ---------- R2 MODE: single direct upload to edge ----------
+        if (uploadMode == 'r2' && presignedUrl != null) {
+          final fileBytes = await File(f.path!).readAsBytes();
+          int retries = 0;
+          while (retries < 3) {
+            try {
+              _upChunkIdx = 0;
+              _dialogSetState?.call(() {});
+              final putRes = await http.put(Uri.parse(presignedUrl), body: fileBytes, headers: {'Content-Type': 'application/octet-stream'}).timeout(const Duration(seconds: 300));
+              if (putRes.statusCode == 200) {
+                _upChunkIdx = 1;
+                _dialogSetState?.call(() {});
+                break;
+              }
+              retries++;
+              if (retries >= 3) throw Exception('R2 upload failed: ${putRes.statusCode}');
+              await Future.delayed(Duration(seconds: retries * 3));
+            } catch (_) {
+              retries++;
+              if (retries >= 3) rethrow;
+              await Future.delayed(Duration(seconds: retries * 3));
+            }
+          }
+          // Complete R2 upload → server pulls from R2 to NAS
+          await client.mutate(MutationOptions(
+            document: gql('''mutation CompleteR2Upload(\$sessionId: ID!, \$r2Key: String!) { completeUpload(sessionId: \$sessionId, r2Key: \$r2Key) { id filename } }'''),
+            variables: {'sessionId': sessionId, 'r2Key': r2Key},
+          ));
+          _upDone = true;
+          _dialogSetState?.call(() {});
+          continue; // next file
+        }
+
+        // ---------- DIRECT MODE: chunked multipart upload ----------
         final raf = await File(f.path!).open(mode: FileMode.read);
         final httpClient = http.Client();
-        const maxParallel = 4; // iOS safe — 4 concurrent HTTP per host
+        const maxParallel = 4;
         try {
           int i = 0;
           while (i < totalChunks) {
-            // Pre-read next batch of chunks from disk (fast, sequential)
             final batch = <_ChunkData>[];
             while (batch.length < maxParallel && i < totalChunks) {
               final start = i * cs;
@@ -235,8 +276,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               i++;
             }
 
-            // Upload batch in parallel
-            final results = await Future.wait(batch.map((c) async {
+            await Future.wait(batch.map((c) async {
               int retries = 0;
               while (retries < 3) {
                 try {
@@ -264,7 +304,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           httpClient.close();
         }
 
-        // 3. Complete upload
+        // Complete direct upload
         await client.mutate(MutationOptions(
           document: gql('''mutation CompleteUpload(\$sessionId: ID!) { completeUpload(sessionId: \$sessionId) { id filename } }'''),
           variables: {'sessionId': sessionId},
