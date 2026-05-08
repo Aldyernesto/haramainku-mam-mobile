@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:graphql_flutter/graphql_flutter.dart';
 import '../providers/auth_provider.dart';
+import '../config/graphql_config.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,6 +16,35 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   String? _error;
+
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _error = null);
+    try {
+      final googleSignIn = GoogleSignIn();
+      final account = await googleSignIn.signIn();
+      if (account == null) return;
+      final auth = await account.authentication;
+      final idToken = auth.idToken;
+      if (idToken == null) throw Exception('Google Sign-In failed');
+
+      final client = GraphQLProvider.of(context).value;
+      final res = await client.mutate(MutationOptions(
+        document: gql(r'''mutation GoogleAuth(\$idToken: String!) { googleAuth(idToken: \$idToken) { token user { id name email role } } }'''),
+        variables: {'idToken': idToken},
+      ));
+      if (res.hasException) throw Exception(res.exception.toString());
+
+      final token = res.data?['googleAuth']?['token'];
+      if (token == null) throw Exception('Auth failed');
+
+      final authProv = context.read<AuthProvider>();
+      await authProv.secureStorage.write(key: 'auth_token', value: token);
+      authProv.setToken(token);
+      if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    }
+  }
 
   Future<void> _handleLogin() async {
     setState(() => _error = null);
@@ -110,9 +142,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: () {
-                      // TODO: Implement Google Sign-In
-                    },
+                    onPressed: _handleGoogleSignIn,
                     icon: const Icon(Icons.login),
                     label: const Text('Continue with Google'),
                     style: OutlinedButton.styleFrom(
