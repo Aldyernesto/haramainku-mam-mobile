@@ -8,6 +8,9 @@ import GoogleSignIn
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    GIDSignIn.sharedInstance.configuration = GIDConfiguration(
+      clientID: "576780723867-d0kkna92ip7usmt4i7k1ha4t2m344n0k.apps.googleusercontent.com"
+    )
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
