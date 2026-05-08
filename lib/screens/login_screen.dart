@@ -23,6 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final googleSignIn = GoogleSignIn(
         serverClientId: '576780723867-d0kkna92ip7usmt4i7k1ha4t2m344n0k.apps.googleusercontent.com',
       );
+      await googleSignIn.signOut(); // force account picker every time
       final account = await googleSignIn.signIn();
       if (account == null) return;
       final auth = await account.authentication;
