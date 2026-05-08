@@ -31,7 +31,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final client = GraphQLProvider.of(context).value;
       final res = await client.mutate(MutationOptions(
-        document: gql(r'''mutation GoogleAuth(\$idToken: String!) { googleAuth(idToken: \$idToken) { token user { id name email role } } }'''),
+        document: gql(r'''mutation GoogleAuth($idToken: String!) { googleAuth(idToken: $idToken) { token user { id name email role } } }'''),
         variables: {'idToken': idToken},
       ));
       if (res.hasException) throw Exception(res.exception.toString());
