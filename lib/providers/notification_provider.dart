@@ -7,16 +7,20 @@ class NotificationProvider extends ChangeNotifier {
   final GraphQLClient _client;
   int _unread = 0;
   List<_NotifItem> _items = [];
-  StreamSubscription? _sub;
+  Timer? _timer;
 
   int get unreadCount => _unread;
   List<_NotifItem> get items => _items;
   bool get hasUnread => _unread > 0;
 
-  NotificationProvider(this._client) { _fetch(); }
+  NotificationProvider(this._client) { _fetch(); _startPolling(); }
 
   static NotificationProvider of(BuildContext context) {
     return Provider.of<NotificationProvider>(context, listen: false);
+  }
+
+  void _startPolling() {
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _fetch());
   }
 
   Future<void> _fetch() async {
@@ -30,33 +34,18 @@ class NotificationProvider extends ChangeNotifier {
         '''),
         fetchPolicy: FetchPolicy.networkOnly,
       ));
-      if (res.hasException) return;
+      if (res.hasException) { debugPrint('[notif] ${res.exception}'); return; }
       final raw = res.data?['notifications'] as List? ?? [];
       _items = raw.map((n) => _NotifItem(
         id: n['id'], type: n['type'] ?? '',
         title: n['title'] ?? '', body: n['body'] ?? '',
-        data: n['data'], read: n['read'] ?? false,
+        data: n['data'] is String ? n['data'] : (n['data'] != null ? n['data'].toString() : null),
+        read: n['read'] ?? false,
         createdAt: DateTime.tryParse(n['createdAt'] ?? '') ?? DateTime.now(),
       )).toList();
       _unread = res.data?['unreadNotificationCount'] ?? 0;
       notifyListeners();
-    } catch (_) {}
-  }
-
-  void _listen() {
-    _sub = _client.subscribe(SubscriptionOptions(
-      document: gql(r'''subscription { notificationReceived { id type title body data read createdAt } }'''),
-    )).listen((res) {
-      final n = res.data?['notificationReceived'];
-      if (n == null) return;
-      _items.insert(0, _NotifItem(
-        id: n['id'], type: n['type'] ?? '', title: n['title'] ?? '',
-        body: n['body'] ?? '', data: n['data'],
-        read: n['read'] ?? false, createdAt: DateTime.tryParse(n['createdAt'] ?? '') ?? DateTime.now(),
-      ));
-      _unread++;
-      notifyListeners();
-    });
+    } catch (e) { debugPrint('[notif] fetch error: $e'); }
   }
 
   Future<void> markAllRead() async {
@@ -67,15 +56,10 @@ class NotificationProvider extends ChangeNotifier {
       for (final item in _items) { item.read = true; }
       _unread = 0;
       notifyListeners();
-    } catch (_) {}
+    } catch (e) { debugPrint('[notif] markRead error: $e'); }
   }
 
-  void clearUnread() {
-    _unread = 0;
-    notifyListeners();
-  }
-
-  @override void dispose() { _sub?.cancel(); super.dispose(); }
+  @override void dispose() { _timer?.cancel(); super.dispose(); }
 }
 
 class _NotifItem {
