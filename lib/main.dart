@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'app.dart';
 import 'config/graphql_config.dart';
+import 'services/fcm_handler.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,6 +11,7 @@ void main() async {
 
   try {
     final client = await initGraphQLClient(secureStorage);
+    initFCM(client); // fire-and-forget, best-effort
     runApp(HaramainKUApp(client: client, secureStorage: secureStorage));
   } catch (e, st) {
     runApp(_ErrorApp(error: e, stack: st));
