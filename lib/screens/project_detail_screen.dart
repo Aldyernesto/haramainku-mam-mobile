@@ -286,7 +286,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       try {
         // 1. Latency check
         final pingStart = DateTime.now().millisecondsSinceEpoch;
-        try { await http.get(Uri.parse('https://mam.haramaintour.com/api/qr-status/ping')).timeout(const Duration(seconds: 3)); } catch (_) {}
+        try { await http.get(Uri.parse('https://mam.haramaintour.com/api/ping')).timeout(const Duration(seconds: 3)); } catch (_) {}
         final latencyMs = DateTime.now().millisecondsSinceEpoch - pingStart;
 
         // 2. Initiate upload via GraphQL
