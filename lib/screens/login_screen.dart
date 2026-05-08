@@ -20,7 +20,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleGoogleSignIn() async {
     setState(() => _error = null);
     try {
-      final googleSignIn = GoogleSignIn();
+      final googleSignIn = GoogleSignIn(
+        serverClientId: '576780723867-d0kkna92ip7usmt4i7k1ha4t2m344n0k.apps.googleusercontent.com',
+      );
       final account = await googleSignIn.signIn();
       if (account == null) return;
       final auth = await account.authentication;
