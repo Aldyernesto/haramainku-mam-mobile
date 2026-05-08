@@ -17,7 +17,7 @@ dependencies:
   flutter_secure_storage: ^9.2.2
 
   # QR Scanner
-  mobile_scanner: ^5.2.3
+  mobile_scanner: ^7.2.0
 
   # File handling
   file_picker: ^8.1.4
