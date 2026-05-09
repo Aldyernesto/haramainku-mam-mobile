@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -28,16 +29,35 @@ class HaramainKUApp extends StatefulWidget {
 class _HaramainKUAppState extends State<HaramainKUApp> {
   bool _checking = true;
   bool _showOnboarding = false;
+  String? _initialRoute;
 
   @override void initState() {
     super.initState();
     _check();
-    initFCM(widget.client); // init push notifications after Flutter is ready
+    initFCM(widget.client);
   }
 
   Future<void> _check() async {
     final show = await OnboardingScreen.shouldShow();
-    if (mounted) setState(() { _showOnboarding = show; _checking = false; });
+    // Quick auth check: token exists → go home, else login
+    final token = await widget.secureStorage.read(key: 'auth_token');
+    // Also check SharedPreferences fallback
+    String? fallbackToken;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      fallbackToken = prefs.getString('auth_token_fallback');
+    } catch (_) {}
+    final hasToken = (token != null && token.isNotEmpty) || (fallbackToken != null && fallbackToken.isNotEmpty);
+
+    String route;
+    if (show) {
+      route = '/onboarding';
+    } else if (hasToken) {
+      route = '/home';
+    } else {
+      route = '/';
+    }
+    if (mounted) setState(() { _showOnboarding = show; _initialRoute = route; _checking = false; });
   }
 
   @override Widget build(BuildContext context) {
@@ -61,7 +81,7 @@ class _HaramainKUAppState extends State<HaramainKUApp> {
           theme: AppTheme.darkTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: ThemeMode.dark,
-          initialRoute: _showOnboarding ? '/onboarding' : '/',
+          initialRoute: _initialRoute ?? '/',
           routes: {
             '/onboarding': (_) => const OnboardingScreen(),
             '/': (_) => const LoginScreen(),
