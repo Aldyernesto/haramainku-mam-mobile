@@ -25,7 +25,17 @@ class NotificationProvider extends ChangeNotifier {
 
   void _initSound() async {
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    await _localNotifs.initialize(const InitializationSettings(android: android));
+    const ios = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+    await _localNotifs.initialize(const InitializationSettings(android: android, iOS: ios));
+    // Request Android 13+ notification permission
+    try {
+      final android = _localNotifs.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await android?.requestNotificationsPermission();
+    } catch (_) {}
   }
 
   void _startPolling() {

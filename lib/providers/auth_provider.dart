@@ -31,12 +31,21 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _fetchMe() async {
     const query = '''query Me { me { id name email role active } }''';
-    try {
-      final result = await _client.query(QueryOptions(document: gql(query)));
-      if (result.data?['me'] != null) {
-        _user = User.fromJson(result.data!['me']);
+    // Retry up to 3 times for network flakiness on app start
+    for (int i = 0; i < 3; i++) {
+      try {
+        final result = await _client.query(QueryOptions(
+          document: gql(query),
+          fetchPolicy: FetchPolicy.networkOnly,
+        ));
+        if (result.data?['me'] != null) {
+          _user = User.fromJson(result.data!['me']);
+          break; // success
+        }
+      } catch (_) {
+        if (i < 2) await Future.delayed(const Duration(seconds: 2));
       }
-    } catch (_) {}
+    }
     _isLoading = false;
     notifyListeners();
   }

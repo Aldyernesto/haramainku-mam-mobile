@@ -6,9 +6,14 @@
 -keep class io.flutter.** { *; }
 -keep class io.flutter.plugins.** { *; }
 
+# Flutter Secure Storage
+-keep class com.it_nomads.fluttersecurestorage.** { *; }
+-dontwarn com.it_nomads.fluttersecurestorage.**
+
 # GraphQL
 -keep class com.graphql.** { *; }
 -keep class graphql.** { *; }
+-keep class com.apollographql.** { *; }
 
 # Mobile Scanner
 -keep class dev.steenbakker.mobile_scanner.** { *; }
@@ -16,8 +21,18 @@
 # Gal (image gallery save)
 -keep class com.plutondev.gal.** { *; }
 
-# Firebase (when re-enabled)
-# -keep class com.google.firebase.** { *; }
+# Google Sign-In
+-keep class com.google.android.gms.auth.** { *; }
+-keep class com.google.android.gms.common.** { *; }
+-dontwarn com.google.android.gms.**
+
+# Firebase / FCM
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.gms.tasks.** { *; }
+-dontwarn com.google.firebase.**
+
+# Flutter Local Notifications
+-keep class com.dexterous.flutterlocalnotifications.** { *; }
 
 # General Android
 -dontwarn javax.annotation.**
@@ -36,4 +51,10 @@
     private void readObject(java.io.ObjectInputStream);
     java.lang.Object writeReplace();
     java.lang.Object readResolve();
+}
+
+# Keep all model classes (prevent Gson/JSON deserialization issues)
+-keepclassmembers class * {
+    *** *();
+    <fields>;
 }
