@@ -3,6 +3,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 import '../models/user.dart';
+import '../config/graphql_config.dart';
 
 class AuthProvider extends ChangeNotifier {
   final GraphQLClient _client;
@@ -37,6 +38,7 @@ class AuthProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('auth_token_fallback', token);
     } catch (_) {}
+    clearAuthCache(); // re-warm cache with new token
   }
 
   Future<void> _loadUser() async {
@@ -162,6 +164,7 @@ class AuthProvider extends ChangeNotifier {
     _user = null;
     await _storage.delete(key: 'auth_token');
     try { (await SharedPreferences.getInstance()).remove('auth_token_fallback'); } catch (_) {}
+    clearAuthCache();
     notifyListeners();
   }
 }
