@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 import '../models/user.dart';
 
@@ -17,10 +18,29 @@ class AuthProvider extends ChangeNotifier {
   User? get user => _user;
   bool get isAuthenticated => _user != null;
   bool get isLoading => _isLoading;
-  Future<String?> get token => _storage.read(key: 'auth_token');
+  Future<String?> get token => _readToken();
+
+  Future<String?> _readToken() async {
+    // Try secure storage first
+    final t = await _storage.read(key: 'auth_token');
+    if (t != null && t.isNotEmpty) return t;
+    // Fallback to SharedPreferences (some devices lose KeyStore keys)
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString('auth_token_fallback');
+    } catch (_) { return null; }
+  }
+
+  Future<void> _saveToken(String token) async {
+    await _storage.write(key: 'auth_token', value: token);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auth_token_fallback', token);
+    } catch (_) {}
+  }
 
   Future<void> _loadUser() async {
-    final token = await _storage.read(key: 'auth_token');
+    final token = await _readToken();
     if (token != null) {
       await _fetchMe();
     } else {
@@ -67,7 +87,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> googleLogin(String token) async {
-    await _storage.write(key: 'auth_token', value: token);
+    await _saveToken(token);
     await _fetchMe();
   }
 
@@ -96,7 +116,7 @@ class AuthProvider extends ChangeNotifier {
     }
 
     _user = User.fromJson(data['user']);
-    await _storage.write(key: 'auth_token', value: data['token']);
+    await _saveToken(data['token']);
     notifyListeners();
     return null;
   }
@@ -133,7 +153,7 @@ class AuthProvider extends ChangeNotifier {
     }
 
     _user = User.fromJson(data['user']);
-    await _storage.write(key: 'auth_token', value: data['token']);
+    await _saveToken(data['token']);
     notifyListeners();
     return null;
   }
@@ -141,6 +161,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logout() async {
     _user = null;
     await _storage.delete(key: 'auth_token');
+    try { (await SharedPreferences.getInstance()).remove('auth_token_fallback'); } catch (_) {}
     notifyListeners();
   }
 }
