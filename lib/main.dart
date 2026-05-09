@@ -1,11 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'app.dart';
 import 'config/graphql_config.dart';
-import 'services/fcm_handler.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Request notification permission on Android 13+
+  final notifPlugin = FlutterLocalNotificationsPlugin();
+  await notifPlugin.initialize(const InitializationSettings(
+    android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    iOS: DarwinInitializationSettings(requestAlertPermission: true, requestBadgePermission: true, requestSoundPermission: true),
+  ));
+  try {
+    await notifPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.requestNotificationsPermission();
+  } catch (_) {}
 
   final secureStorage = FlutterSecureStorage();
 
