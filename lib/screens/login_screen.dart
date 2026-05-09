@@ -17,6 +17,33 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordCtrl = TextEditingController();
   String? _error;
 
+  @override void initState() {
+    super.initState();
+    // Auto-navigate if already authenticated (token restored on app restart)
+    final auth = context.read<AuthProvider>();
+    if (auth.isAuthenticated) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacementNamed(context, '/home');
+      });
+    }
+    auth.addListener(_onAuthChanged);
+  }
+
+  void _onAuthChanged() {
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (auth.isAuthenticated) {
+      Navigator.pushReplacementNamed(context, '/home');
+    }
+  }
+
+  @override void dispose() {
+    context.read<AuthProvider>().removeListener(_onAuthChanged);
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _handleGoogleSignIn() async {
     setState(() => _error = null);
     try {

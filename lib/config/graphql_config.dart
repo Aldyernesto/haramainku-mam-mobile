@@ -10,28 +10,33 @@ SharedPreferences? _cachedPrefs;
 FlutterSecureStorage? _cachedStorage;
 
 Future<String?> _readToken() async {
-  if (_cachedToken != null && _cachedToken!.isNotEmpty) return _cachedToken;
+  if (_cachedToken != null && _cachedToken!.isNotEmpty) {
+    print('[TOKEN] cache hit');
+    return _cachedToken;
+  }
+  print('[TOKEN] cache miss, reading storage...');
 
-  // Try secure storage
   final s = _cachedStorage ?? FlutterSecureStorage();
   _cachedStorage = s;
   final t = await s.read(key: 'auth_token');
+  print('[TOKEN] secure storage: ${t != null ? "found (${t.length} chars)" : "NOT FOUND"}');
+
   if (t != null && t.isNotEmpty) {
     _cachedToken = t;
     return t;
   }
 
-  // Fallback to SharedPreferences
   try {
     _cachedPrefs ??= await SharedPreferences.getInstance();
     final fallback = _cachedPrefs?.getString('auth_token_fallback');
+    print('[TOKEN] shared prefs: ${fallback != null ? "found (${fallback.length} chars)" : "NOT FOUND"}');
     if (fallback != null && fallback.isNotEmpty) {
       _cachedToken = fallback;
-      // Also restore to secure storage for next time
       s.write(key: 'auth_token', value: fallback);
       return fallback;
     }
-  } catch (_) {}
+  } catch (e) { print('[TOKEN] shared prefs error: $e'); }
+  print('[TOKEN] no token found anywhere');
   return null;
 }
 

@@ -33,19 +33,24 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _saveToken(String token) async {
+    print('[AUTH] saving token (${token.length} chars)');
     await _storage.write(key: 'auth_token', value: token);
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('auth_token_fallback', token);
-    } catch (_) {}
-    clearAuthCache(); // re-warm cache with new token
+      print('[AUTH] token saved to both storages');
+    } catch (e) { print('[AUTH] shared prefs save error: $e'); }
+    clearAuthCache();
   }
 
   Future<void> _loadUser() async {
     final token = await _readToken();
+    print('[AUTH] token found: ${token != null} len=${token?.length}');
     if (token != null) {
       await _fetchMe();
+      print('[AUTH] fetchMe done, user: ${_user?.email}');
     } else {
+      print('[AUTH] no token, showing login');
       _isLoading = false;
       notifyListeners();
     }
