@@ -44,6 +44,7 @@ Future<void> initFCM(GraphQLClient client) async {
         const NotificationDetails(android: AndroidNotificationDetails(
           'haramainku_push', 'HaramainKU Push',
           importance: Importance.max, priority: Priority.high,
+          sound: RawResourceAndroidNotificationSound('app_notification'),
           playSound: true, enableVibration: true,
         )),
       );

@@ -79,6 +79,7 @@ class NotificationProvider extends ChangeNotifier {
               android: AndroidNotificationDetails(
                 'haramainku_general', 'HaramainKU',
                 importance: Importance.high, priority: Priority.high,
+                sound: RawResourceAndroidNotificationSound('app_notification'),
                 playSound: true, enableVibration: true,
               ),
             ),
