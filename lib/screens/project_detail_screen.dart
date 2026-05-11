@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:gal/gal.dart';
@@ -165,16 +166,20 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   Future<void> _pickFromGallery(BuildContext context, GraphQLClient client, String folderName, VoidCallback? refetch, String? realProjectId, [String? folderType]) async {
     final isVideo = (folderType ?? folderName).toLowerCase() == 'video';
-    final isPhoto = (folderType ?? folderName).toLowerCase() == 'photo';
     final files = <_FileToUpload>[];
 
-    // Use FilePicker for multi-select on both video and photo
-    final ft = isVideo ? FileType.video : (isPhoto ? FileType.image : FileType.media);
-    final result = await FilePicker.platform.pickFiles(allowMultiple: true, type: ft);
-    if (result == null || result.files.isEmpty) return;
-    for (final f in result.files) {
-      if (f.path == null) continue;
-      files.add(_FileToUpload(path: f.path!, name: f.name, size: f.size));
+    if (isVideo) {
+      final x = await ImagePicker().pickVideo(source: ImageSource.gallery);
+      if (x != null) {
+        final sz = await x.length();
+        files.add(_FileToUpload(path: x.path, name: x.name, size: sz));
+      }
+    } else {
+      final picked = await ImagePicker().pickMultiImage();
+      for (final x in picked) {
+        final sz = await x.length();
+        files.add(_FileToUpload(path: x.path, name: x.name, size: sz));
+      }
     }
     if (files.isEmpty) return;
     if (!context.mounted) return;
@@ -401,7 +406,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   mpReq.fields['sessionId'] = sessionId;
                   mpReq.fields['chunkIndex'] = c.index.toString();
                   mpReq.files.add(http.MultipartFile.fromBytes('file', c.bytes, filename: 'chunk'));
-                  await httpClient.send(mpReq).timeout(const Duration(seconds: 120)).then((r) => r.stream.drain());
+                  final streamedRes = await httpClient.send(mpReq).timeout(const Duration(seconds: 120));
+                  final respBody = await streamedRes.stream.bytesToString();
+                  if (streamedRes.statusCode != 200) {
+                    throw Exception('Chunk ${c.index} HTTP ${streamedRes.statusCode}: ${respBody.length > 200 ? respBody.substring(0, 200) : respBody}');
+                  }
                   return;
                 } catch (_) {
                   retries++;
