@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:gal/gal.dart';
@@ -166,20 +166,17 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   Future<void> _pickFromGallery(BuildContext context, GraphQLClient client, String folderName, VoidCallback? refetch, String? realProjectId, [String? folderType]) async {
     final isVideo = (folderType ?? folderName).toLowerCase() == 'video';
-    final files = <_FileToUpload>[];
+    final isPhoto = (folderType ?? folderName).toLowerCase() == 'photo';
+    final reqType = isVideo ? RequestType.video : (isPhoto ? RequestType.image : RequestType.common);
 
-    if (isVideo) {
-      final x = await ImagePicker().pickVideo(source: ImageSource.gallery);
-      if (x != null) {
-        final sz = await x.length();
-        files.add(_FileToUpload(path: x.path, name: x.name, size: sz));
-      }
-    } else {
-      final picked = await ImagePicker().pickMultiImage();
-      for (final x in picked) {
-        final sz = await x.length();
-        files.add(_FileToUpload(path: x.path, name: x.name, size: sz));
-      }
+    final picked = await AssetPicker.pickAssets(context, pickerConfig: AssetPickerConfig(requestType: reqType, maxAssets: 50));
+    if (picked == null || picked.isEmpty) return;
+
+    final files = <_FileToUpload>[];
+    for (final entity in picked) {
+      final file = await entity.file;
+      if (file == null) continue;
+      files.add(_FileToUpload(path: file.path, name: entity.title ?? file.path.split('/').last, size: await file.length()));
     }
     if (files.isEmpty) return;
     if (!context.mounted) return;
