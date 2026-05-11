@@ -304,15 +304,16 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       _sheetSetState?.call(() {});
 
       try {
-        // 1. Latency check
-        final pingStart = DateTime.now().millisecondsSinceEpoch;
-        try { await http.get(Uri.parse('https://mam.haramaintour.com/api/ping')).timeout(const Duration(seconds: 3)); } catch (_) {}
-        final latencyMs = DateTime.now().millisecondsSinceEpoch - pingStart;
+        // Mobile ALWAYS uses direct mode (clientLatencyMs=0 → server returns 'direct')
+        // R2 mode causes Broken Pipe for large files because Dart's HTTP client
+        // can't reliably maintain long-lived streaming PUTs to R2.
+        // Direct mode with 5MB chunks handles any file size reliably.
 
-        // 2. Initiate upload via GraphQL
+        // 2. Initiate upload via GraphQL — request 5MB chunks for mobile (vs 50MB web default)
+        const mobileChunkSize = 5 * 1024 * 1024; // 5MB — optimal for mobile memory
         final initRes = await client.mutate(MutationOptions(
           document: gql('''mutation InitiateUpload(\$input: InitiateUploadInput!) { initiateUpload(input: \$input) { id chunkSize totalChunks uploadMode presignedUrl r2Key } }'''),
-          variables: {'input': {'filename': f.name, 'totalSize': f.size, 'projectId': realProjectId ?? widget.projectId, 'folderId': widget.isFolder ? widget.projectId : null, 'clientLatencyMs': latencyMs}},
+          variables: {'input': {'filename': f.name, 'totalSize': f.size, 'projectId': realProjectId ?? widget.projectId, 'folderId': widget.isFolder ? widget.projectId : null, 'clientLatencyMs': 0, 'clientChunkSize': mobileChunkSize}},
         ));
         final sessionId = initRes.data?['initiateUpload']?['id'];
         if (sessionId == null) throw Exception('Failed to initiate');
@@ -345,19 +346,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           int retries = 0;
           while (retries < 3) {
             try {
-              st.percent = 0.1; _sheetSetState?.call(() {});
+              st.percent = 0.05; _sheetSetState?.call(() {});
               final file = File(f.path);
               final fileSize = await file.length();
               final request = http.StreamedRequest('PUT', Uri.parse(presignedUrl));
               request.headers['Content-Type'] = 'application/octet-stream';
               request.headers['Content-Length'] = fileSize.toString();
-              final sink = request.sink;
+              // IMPORTANT: call send() FIRST — this starts the HTTP connection.
+              // The sink is a stream that pipes data into the open connection.
+              // Writing to sink before send() causes a deadlock/hang.
+              final responseFuture = request.send();
+              int sent = 0;
               await for (final chunk in file.openRead()) {
-                sink.add(chunk);
+                request.sink.add(chunk);
+                sent += chunk.length;
+                st.percent = 0.05 + (sent / fileSize) * 0.75;
+                _sheetSetState?.call(() {});
               }
-              await sink.close();
-              st.percent = 0.8; _sheetSetState?.call(() {});
-              final streamedRes = await request.send().timeout(const Duration(seconds: 300));
+              await request.sink.close();
+              st.percent = 0.85; _sheetSetState?.call(() {});
+              final streamedRes = await responseFuture.timeout(const Duration(seconds: 300));
               await streamedRes.stream.drain();
               if (streamedRes.statusCode == 200) break;
               retries++;
@@ -382,7 +390,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         // ---------- DIRECT MODE: chunked multipart ----------
         final raf = await File(f.path).open(mode: FileMode.read);
         final httpClient = http.Client();
-        const maxParallel = 4;
+        const maxParallel = 2; // 2 concurrent chunks — avoids Cloudflare congestion
+        int completedChunks = 0;
         try {
           int i = 0;
           while (i < totalChunks) {
@@ -403,11 +412,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   mpReq.fields['sessionId'] = sessionId;
                   mpReq.fields['chunkIndex'] = c.index.toString();
                   mpReq.files.add(http.MultipartFile.fromBytes('file', c.bytes, filename: 'chunk'));
-                  final streamedRes = await httpClient.send(mpReq).timeout(const Duration(seconds: 120));
+                  final streamedRes = await httpClient.send(mpReq).timeout(const Duration(seconds: 180));
                   final respBody = await streamedRes.stream.bytesToString();
                   if (streamedRes.statusCode != 200) {
                     throw Exception('Chunk ${c.index} HTTP ${streamedRes.statusCode}: ${respBody.length > 200 ? respBody.substring(0, 200) : respBody}');
                   }
+                  // Update progress per completed chunk (not per batch)
+                  completedChunks++;
+                  st.percent = completedChunks / totalChunks * 0.9; // 0-90%, leave 10% for completeUpload
+                  _sheetSetState?.call(() {});
                   return;
                 } catch (_) {
                   retries++;
@@ -416,8 +429,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 }
               }
             }));
-            st.percent = i / totalChunks;
-            _sheetSetState?.call(() {});
           }
         } finally {
           await raf.close();
@@ -442,7 +453,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   void _showFabMenu(BuildContext ctx, GraphQLClient client, String folderName, VoidCallback? refetch, String? realProjectId, String? folderType) {
     showModalBottomSheet(context: ctx, backgroundColor: AppTheme.surfaceContainerHigh, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => SafeArea(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
-        ListTile(leading: const Icon(Icons.photo_library, color: AppTheme.gold), title: const Text('Pick from Gallery', style: TextStyle(color: AppTheme.onSurface)), onTap: () { Navigator.pop(ctx); _pickFromGallery(ctx, client, folderName, refetch, realProjectId, folderType); }),
+        ListTile(leading: const Icon(Icons.photo_library, color: AppTheme.gold), title: const Text('Pick from Gallery', style: TextStyle(color: AppTheme.onSurface)), onTap: () { Navigator.pop(ctx); Future.delayed(const Duration(milliseconds: 300), () { if (ctx.mounted) { _pickFromGallery(ctx, client, folderName, refetch, realProjectId, folderType); } }); }),
         ListTile(leading: const Icon(Icons.upload_file, color: AppTheme.gold), title: const Text('Upload Files', style: TextStyle(color: AppTheme.onSurface)), onTap: () { Navigator.pop(ctx); _pickAndUpload(ctx, client, folderName, refetch, realProjectId, folderType); }),
         ListTile(leading: const Icon(Icons.create_new_folder, color: AppTheme.gold), title: const Text('Create Folder', style: TextStyle(color: AppTheme.onSurface)), onTap: () { Navigator.pop(ctx); _showCreateFolderDialog(ctx, client, refetch, realProjectId); }),
       ]))),
@@ -698,25 +709,35 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
     try {
       final token = await const FlutterSecureStorage().read(key: 'auth_token') ?? '';
-      final client = http.Client();
-      final request = http.Request('GET', Uri.parse(url));
-      request.headers['Authorization'] = 'Bearer $token';
-      final streamedResp = await client.send(request);
-      _total = streamedResp.contentLength ?? 0;
+
+      // Use dart:io HttpClient for native-level download performance
+      final ioClient = HttpClient();
+      ioClient.connectionTimeout = const Duration(seconds: 15);
+      final ioRequest = await ioClient.getUrl(Uri.parse(url));
+      ioRequest.headers.set('Authorization', 'Bearer $token');
+      final ioResponse = await ioRequest.close();
+      _total = ioResponse.contentLength;
       _setDialog?.call(() {});
 
-      final bytes = <int>[];
-      await for (final chunk in streamedResp.stream) {
-        bytes.addAll(chunk);
-        _received += chunk.length;
-        _setDialog?.call(() {});
-      }
-      client.close();
-
-      // Save to temp first, then move to Gallery if image/video
+      // Stream directly to file with throttled UI updates
+      // Calling setState on every chunk (~1KB) = thousands of rebuilds/sec → kills performance
       final dir = await getApplicationDocumentsDirectory();
       final savePath = '${dir.path}/$fileName';
-      await File(savePath).writeAsBytes(bytes);
+      final fileSink = File(savePath).openWrite();
+      int lastUiUpdate = 0;
+      await for (final chunk in ioResponse) {
+        fileSink.add(chunk);
+        _received += chunk.length;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (now - lastUiUpdate > 200) { // max 5 UI updates per second
+          lastUiUpdate = now;
+          _setDialog?.call(() {});
+        }
+      }
+      _setDialog?.call(() {}); // final update
+      await fileSink.flush();
+      await fileSink.close();
+      ioClient.close();
 
       if (isImage || isVideo) {
         _statusText = 'Saving to Gallery...';

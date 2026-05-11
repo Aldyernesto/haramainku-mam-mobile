@@ -58,3 +58,9 @@ key.properties
 *.aab
 google-services.json
 GoogleService-Info.plist
+client_secret_*.json
+haramainku-mam-firebase-adminsdk-*.json
+*.mobiledevicepairing
+iloader.exe
+*.plist
+!ios/Runner/Info.plist
