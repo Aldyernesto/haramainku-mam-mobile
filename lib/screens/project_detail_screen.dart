@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:image_picker/image_picker.dart';
+
 import 'package:path_provider/path_provider.dart';
 import 'package:gal/gal.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -166,21 +166,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Future<void> _pickFromGallery(BuildContext context, GraphQLClient client, String folderName, VoidCallback? refetch, String? realProjectId, [String? folderType]) async {
     final isVideo = (folderType ?? folderName).toLowerCase() == 'video';
     final isPhoto = (folderType ?? folderName).toLowerCase() == 'photo';
-    final picker = ImagePicker();
     final files = <_FileToUpload>[];
 
-    if (isVideo) {
-      final xf = await picker.pickVideo(source: ImageSource.gallery);
-      if (xf != null) {
-        final sz = await xf.length();
-        files.add(_FileToUpload(path: xf.path, name: xf.name, size: sz));
-      }
-    } else {
-      final xfiles = await picker.pickMultiImage();
-      for (final xf in xfiles) {
-        final sz = await xf.length();
-        files.add(_FileToUpload(path: xf.path, name: xf.name, size: sz));
-      }
+    // Use FilePicker for multi-select on both video and photo
+    final ft = isVideo ? FileType.video : (isPhoto ? FileType.image : FileType.media);
+    final result = await FilePicker.platform.pickFiles(allowMultiple: true, type: ft);
+    if (result == null || result.files.isEmpty) return;
+    for (final f in result.files) {
+      if (f.path == null) continue;
+      files.add(_FileToUpload(path: f.path!, name: f.name, size: f.size));
     }
     if (files.isEmpty) return;
     if (!context.mounted) return;
