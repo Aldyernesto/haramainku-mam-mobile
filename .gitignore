@@ -64,3 +64,9 @@ haramainku-mam-firebase-adminsdk-*.json
 iloader.exe
 *.plist
 !ios/Runner/Info.plist
+Screenshot/
+app-notification-*
+*.zip
+*.wav
+*.mp3
+Runner.app.zip
