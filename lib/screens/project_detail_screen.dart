@@ -5,18 +5,27 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:gal/gal.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
+import '../services/background_upload.dart';
 import 'chat_screen.dart';
 
 class _ChunkData {
   final int index;
   final List<int> bytes;
   const _ChunkData({required this.index, required this.bytes});
+}
+
+class _FileToUpload {
+  final String path;
+  final String name;
+  final int size;
+  const _FileToUpload({required this.path, required this.name, required this.size});
 }
 
 enum _UpStatus { pending, uploading, done, error }
@@ -149,20 +158,46 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final accept = _acceptForFolder(folderType ?? folderName);
     final result = await FilePicker.platform.pickFiles(allowMultiple: true, type: accept != null ? FileType.custom : FileType.any, allowedExtensions: accept);
     if (result == null || result.files.isEmpty) return;
-    final validFiles = result.files.where((f) => f.path != null).toList();
-    if (validFiles.isEmpty) return;
+    final files = result.files.where((f) => f.path != null).map((f) => _FileToUpload(path: f.path!, name: f.name, size: f.size)).toList();
+    if (files.isEmpty) return;
+    await _doUpload(context, client, files, refetch, realProjectId);
+  }
+
+  Future<void> _pickFromGallery(BuildContext context, GraphQLClient client, String folderName, VoidCallback? refetch, String? realProjectId, [String? folderType]) async {
+    final isVideo = (folderType ?? folderName).toLowerCase() == 'video';
+    final isPhoto = (folderType ?? folderName).toLowerCase() == 'photo';
+    final picker = ImagePicker();
+    final files = <_FileToUpload>[];
+
+    if (isVideo) {
+      final xf = await picker.pickVideo(source: ImageSource.gallery);
+      if (xf != null) {
+        final sz = await xf.length();
+        files.add(_FileToUpload(path: xf.path, name: xf.name, size: sz));
+      }
+    } else {
+      final xfiles = await picker.pickMultiImage();
+      for (final xf in xfiles) {
+        final sz = await xf.length();
+        files.add(_FileToUpload(path: xf.path, name: xf.name, size: sz));
+      }
+    }
+    if (files.isEmpty) return;
+    if (!context.mounted) return;
+    await _doUpload(context, client, files, refetch, realProjectId);
+  }
+
+  Future<void> _doUpload(BuildContext context, GraphQLClient client, List<_FileToUpload> files, VoidCallback? refetch, String? realProjectId) async {
     if (!context.mounted) return;
 
-    // Upload progress state per file
     final fileStates = <_UploadingFile>[];
-    for (final f in validFiles) {
+    for (final f in files) {
       fileStates.add(_UploadingFile(name: f.name, status: _UpStatus.pending, percent: 0.0));
     }
-    int _activeIdx = 0;
-    bool _showAll = validFiles.length <= 3;
+    bool _showAll = files.length <= 3;
     StateSetter? _sheetSetState;
 
-    // Show upload bottom sheet (don't await — runs in parallel with upload)
+    // Show upload bottom sheet
     showModalBottomSheet<void>(
       context: context,
       isDismissible: false,
@@ -181,20 +216,17 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Header
                   Row(children: [
                     Expanded(child: Text(
-                      hasErrors ? 'Upload Complete (with errors)' : allDone ? '${fileStates.where((s) => s.status == _UpStatus.done).length} Files Uploaded' : 'Uploading ${fileStates.where((s) => s.status != _UpStatus.done).length} of ${validFiles.length}',
+                      hasErrors ? 'Upload Complete (with errors)' : allDone ? '${fileStates.where((s) => s.status == _UpStatus.done).length} Files Uploaded' : 'Uploading ${fileStates.where((s) => s.status != _UpStatus.done).length} of ${files.length}',
                       style: TextStyle(color: hasErrors ? Colors.redAccent : AppTheme.onSurface, fontSize: 18, fontWeight: FontWeight.w700),
                     )),
                     if (allDone)
                       IconButton(onPressed: () { Navigator.pop(ctx); if (mounted) refetch?.call(); }, icon: const Icon(Icons.close, color: AppTheme.onSurfaceVariant)),
                   ]),
                   const SizedBox(height: 12),
-                  // File list
                   ...List.generate(displayFiles.length, (i) {
                     final s = displayFiles[i];
-                    final actualIdx = _showAll ? i : (i < 3 ? i : 0);
                     final isActive = s.status == _UpStatus.uploading;
                     final isDone = s.status == _UpStatus.done;
                     final isErr = s.status == _UpStatus.error;
@@ -208,7 +240,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         border: isActive ? Border.all(color: AppTheme.gold.withValues(alpha: 0.3)) : null,
                       ),
                       child: Row(children: [
-                        // Status icon
                         AnimatedSwitcher(
                           duration: const Duration(milliseconds: 200),
                           child: isDone ? const Icon(Icons.check_circle, color: Color(0xFF4CAF50), size: 22)
@@ -217,7 +248,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                               : const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: AppTheme.gold)),
                         ),
                         const SizedBox(width: 12),
-                        // Name + progress
                         Expanded(
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Text(s.name, style: TextStyle(color: isDone ? AppTheme.onSurfaceVariant : AppTheme.onSurface, fontSize: 13, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -241,8 +271,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       ]),
                     );
                   }),
-                  // Show more / show less toggle
-                  if (validFiles.length > 3)
+                  if (files.length > 3)
                     GestureDetector(
                       onTap: () => setState(() => _showAll = !_showAll),
                       child: Padding(
@@ -250,14 +279,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(_showAll ? Icons.expand_less : Icons.expand_more, color: AppTheme.gold, size: 18),
                           const SizedBox(width: 4),
-                          Text(
-                            _showAll ? 'Show less' : 'Show all (${validFiles.length} files)',
-                            style: const TextStyle(color: AppTheme.gold, fontSize: 12, fontWeight: FontWeight.w600),
-                          ),
+                          Text(_showAll ? 'Show less' : 'Show all (${files.length} files)', style: const TextStyle(color: AppTheme.gold, fontSize: 12, fontWeight: FontWeight.w600)),
                         ]),
                       ),
                     ),
-                  // Done button
                   if (allDone || hasErrors)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
@@ -276,11 +301,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     );
 
     // Run upload loop
-    for (int fi = 0; fi < validFiles.length; fi++) {
-      final f = validFiles[fi];
+    for (int fi = 0; fi < files.length; fi++) {
+      final f = files[fi];
       final st = fileStates[fi];
       st.status = _UpStatus.uploading;
-      _activeIdx = fi;
       _sheetSetState?.call(() {});
 
       try {
@@ -304,19 +328,46 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         final cs = (initRes.data?['initiateUpload']?['chunkSize'] as int?) ?? 52428800;
         final totalChunks = uploadMode == 'r2' ? 1 : ((initRes.data?['initiateUpload']?['totalChunks'] as int?) ?? 1);
 
-        // ---------- R2 MODE ----------
+        // Register background task in case app is killed mid-upload
+        try {
+          registerBackgroundUpload(
+            filePath: f.path,
+            fileName: f.name,
+            sessionId: sessionId,
+            token: token,
+            mode: uploadMode,
+            presignedUrl: presignedUrl,
+            r2Key: r2Key,
+            baseUrl: 'https://mam.haramaintour.com',
+            chunkSize: cs,
+            totalChunks: totalChunks,
+          );
+        } catch (_) {}
+
+        // ---------- R2 MODE (streaming) ----------
         if (uploadMode == 'r2' && presignedUrl != null) {
-          final fileBytes = await File(f.path!).readAsBytes();
           int retries = 0;
           while (retries < 3) {
             try {
-              st.percent = 0.5; _sheetSetState?.call(() {});
-              final putRes = await http.put(Uri.parse(presignedUrl), body: fileBytes, headers: {'Content-Type': 'application/octet-stream'}).timeout(const Duration(seconds: 300));
-              if (putRes.statusCode == 200) break;
+              st.percent = 0.1; _sheetSetState?.call(() {});
+              final file = File(f.path);
+              final fileSize = await file.length();
+              final request = http.StreamedRequest('PUT', Uri.parse(presignedUrl));
+              request.headers['Content-Type'] = 'application/octet-stream';
+              request.headers['Content-Length'] = fileSize.toString();
+              final sink = request.sink;
+              await for (final chunk in file.openRead()) {
+                sink.add(chunk);
+              }
+              await sink.close();
+              st.percent = 0.8; _sheetSetState?.call(() {});
+              final streamedRes = await request.send().timeout(const Duration(seconds: 300));
+              await streamedRes.stream.drain();
+              if (streamedRes.statusCode == 200) break;
               retries++;
-              if (retries >= 3) throw Exception('R2 upload failed: ${putRes.statusCode}');
+              if (retries >= 3) throw Exception('R2 upload failed: ${streamedRes.statusCode}');
               await Future.delayed(Duration(seconds: retries * 3));
-            } catch (_) {
+            } catch (e) {
               retries++;
               if (retries >= 3) rethrow;
               await Future.delayed(Duration(seconds: retries * 3));
@@ -333,7 +384,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         }
 
         // ---------- DIRECT MODE: chunked multipart ----------
-        final raf = await File(f.path!).open(mode: FileMode.read);
+        final raf = await File(f.path).open(mode: FileMode.read);
         final httpClient = http.Client();
         const maxParallel = 4;
         try {
@@ -389,9 +440,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   void _showFabMenu(BuildContext ctx, GraphQLClient client, String folderName, VoidCallback? refetch, String? realProjectId, String? folderType) {
-    final _nameCtrl = TextEditingController();
     showModalBottomSheet(context: ctx, backgroundColor: AppTheme.surfaceContainerHigh, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => SafeArea(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(leading: const Icon(Icons.photo_library, color: AppTheme.gold), title: const Text('Pick from Gallery', style: TextStyle(color: AppTheme.onSurface)), onTap: () { Navigator.pop(ctx); _pickFromGallery(ctx, client, folderName, refetch, realProjectId, folderType); }),
         ListTile(leading: const Icon(Icons.upload_file, color: AppTheme.gold), title: const Text('Upload Files', style: TextStyle(color: AppTheme.onSurface)), onTap: () { Navigator.pop(ctx); _pickAndUpload(ctx, client, folderName, refetch, realProjectId, folderType); }),
         ListTile(leading: const Icon(Icons.create_new_folder, color: AppTheme.gold), title: const Text('Create Folder', style: TextStyle(color: AppTheme.onSurface)), onTap: () { Navigator.pop(ctx); _showCreateFolderDialog(ctx, client, refetch, realProjectId); }),
       ]))),

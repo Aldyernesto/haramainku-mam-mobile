@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:workmanager/workmanager.dart';
 import 'app.dart';
 import 'config/graphql_config.dart';
+import 'services/background_upload.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize background upload worker
+  Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
 
   // Request notification permission on Android 13+
   final notifPlugin = FlutterLocalNotificationsPlugin();
