@@ -174,9 +174,19 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
     final files = <_FileToUpload>[];
     for (final entity in picked) {
-      final file = await entity.file;
-      if (file == null) continue;
-      files.add(_FileToUpload(path: file.path, name: entity.title ?? file.path.split('/').last, size: await file.length()));
+      try {
+        // iOS: entity.file can return null for iCloud/HEIC assets
+        // Try originFile as fallback
+        var file = await entity.file;
+        file ??= await entity.originFile;
+        if (file == null) continue;
+        final name = entity.title ?? file.path.split(Platform.pathSeparator).last;
+        final size = await file.length();
+        if (size <= 0) continue;
+        files.add(_FileToUpload(path: file.path, name: name, size: size));
+      } catch (_) {
+        continue; // skip assets that can't be loaded
+      }
     }
     if (files.isEmpty) return;
     if (!context.mounted) return;
