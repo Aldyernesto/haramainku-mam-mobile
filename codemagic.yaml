@@ -13,8 +13,9 @@ workflows:
     cache:
       cache_paths:
         - $HOME/.pub-cache
-        - $CM_BUILD_DIR/build
     scripts:
+      - name: Clean previous build
+        script: flutter clean
       - name: Get Flutter packages
         script: flutter pub get
       - name: Generate app icons
