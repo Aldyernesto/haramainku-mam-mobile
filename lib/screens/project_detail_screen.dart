@@ -316,7 +316,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           variables: {'input': {'filename': f.name, 'totalSize': f.size, 'projectId': realProjectId ?? widget.projectId, 'folderId': widget.isFolder ? widget.projectId : null, 'clientLatencyMs': 0, 'clientChunkSize': mobileChunkSize}},
         ));
         final sessionId = initRes.data?['initiateUpload']?['id'];
-        if (sessionId == null) throw Exception('Failed to initiate');
+        if (sessionId == null) {
+          final gqlErrors = initRes.exception?.graphqlErrors?.map((e) => e.message).join(', ') ?? '';
+          final linkError = initRes.exception?.linkException?.toString() ?? '';
+          throw Exception('Initiate failed: ${gqlErrors.isNotEmpty ? gqlErrors : linkError.isNotEmpty ? linkError : 'no session returned'}');
+        }
 
         final uploadMode = initRes.data?['initiateUpload']?['uploadMode'] ?? 'direct';
         final presignedUrl = initRes.data?['initiateUpload']?['presignedUrl'];
