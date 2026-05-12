@@ -180,7 +180,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         var file = await entity.file;
         file ??= await entity.originFile;
         if (file == null) continue;
-        final name = entity.title ?? file.path.split(Platform.pathSeparator).last;
+        // iOS: entity.title often lacks extension (e.g. "IMG_1234" instead of "IMG_1234.MOV")
+        // Always get extension from file.path which has the real extension
+        final pathName = file.path.split(Platform.pathSeparator).last;
+        final pathExt = pathName.contains('.') ? pathName.split('.').last : '';
+        var name = entity.title ?? pathName;
+        // Append extension if title has none
+        if (!name.contains('.') && pathExt.isNotEmpty) {
+          name = '$name.$pathExt';
+        }
         final size = await file.length();
         if (size <= 0) continue;
         files.add(_FileToUpload(path: file.path, name: name, size: size));
