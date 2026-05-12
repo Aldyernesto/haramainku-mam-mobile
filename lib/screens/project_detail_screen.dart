@@ -184,7 +184,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         // Always get extension from file.path which has the real extension
         final pathName = file.path.split(Platform.pathSeparator).last;
         final pathExt = pathName.contains('.') ? pathName.split('.').last : '';
-        var name = entity.title ?? pathName;
+        final title = entity.title;
+        var name = (title != null && title.isNotEmpty) ? title : pathName;
         // Append extension if title has none
         if (!name.contains('.') && pathExt.isNotEmpty) {
           name = '$name.$pathExt';
